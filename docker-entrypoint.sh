@@ -2,6 +2,11 @@
 
 conf_file="/etc/serposcope.conf"
 
+usermod -u 1000 serposcope
+groupmod -g 50 staff
+chown -R serposcope:staff /var/lib/serposcope
+chown -R serposcope:staff /var/log/serposcope
+
 function replace_param {
   sed -i -r -e "/^# *${1}=/ {s|^# *||;s|=.*$|=|;s|$|$(eval echo \$$2)|}" $conf_file
 }
