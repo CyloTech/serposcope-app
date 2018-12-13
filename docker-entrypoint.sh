@@ -9,6 +9,9 @@ if [ ! -f /etc/app_configured ]; then
 
     usermod -u 1000 serposcope
     groupmod -g 50 staff
+
+    usermod -a -G staff serposcope
+
     chown -R serposcope:staff /var/lib/serposcope
     chown -R serposcope:staff /var/log/serposcope
 
