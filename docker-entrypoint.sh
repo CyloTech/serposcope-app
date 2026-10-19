@@ -53,14 +53,25 @@ if [ ! -f /etc/app_configured ]; then
     DATA_STR="email=${ADMIN_EMAIL}&email-confirm=${ADMIN_EMAIL}&password=${ADMIN_PASS}&password-confirm=${ADMIN_PASS}"
     curl -v 'http://127.0.0.1/create-admin' --data ${DATA_STR} --compressed &> /var/log/serpuser.log
 
-    # Finish App install.
-    until [[ $(curl -i -H "Accept: application/json" -H "Content-Type:application/json" -X POST "https://api.cylo.io/v1/apps/installed/${INSTANCE_ID}" | grep '200') ]]
-        do
-        sleep 5
-    done
+    # Finish App install: mark the installed callback pending (before the
+    # configured marker, so a crash in between cannot lose it). It is sent in
+    # the background below.
+    touch /etc/appbox_callback_pending
     touch /etc/app_configured
 
 else
     service serposcope start
 fi
+
+# Send a pending installed callback in the background. The helper retries
+# network errors, 408, 429 and 5xx and stops on any other status (e.g. 401
+# once the token was used or cleared) instead of retrying forever.
+if [ -f /etc/appbox_callback_pending ]; then
+    (
+        set +e
+        /usr/local/bin/appbox-installed-callback
+        rm -f /etc/appbox_callback_pending
+    ) </dev/null &
+fi
+
 tail -F /var/log/serposcope/startup.log

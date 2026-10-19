@@ -35,6 +35,11 @@ COPY serposcope /etc/default/serposcope
 
 RUN chmod 755 /docker-entrypoint.sh
 
+# Sends POST /v1/apps/installed/${INSTANCE_ID} for the entrypoint. It retries
+# network errors, 408, 429 and 5xx and stops on any other status.
+COPY appbox-installed-callback /usr/local/bin/appbox-installed-callback
+RUN chmod 755 /usr/local/bin/appbox-installed-callback
+
 VOLUME /var/lib/serposcope/
 
 RUN groupmod -g 9999 nogroup && \
