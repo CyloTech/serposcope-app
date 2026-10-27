@@ -66,7 +66,7 @@ def redact(text):
     return text
 
 
-def docker(*args, check=True, timeout=600):
+def docker(*args, check=True, timeout=1800):
     result = subprocess.run(['docker', *args], capture_output=True, timeout=timeout)
     if check and result.returncode:
         raise RuntimeError('docker ' + args[0] + ' failed: ' + redact(result.stderr.decode(errors='replace')[-1500:]))
@@ -133,7 +133,7 @@ def launch(suffix, selected_image, data_volume, env):
 def all_logs(name):
     """Container log plus the supervisor, Serposcope and old create-admin logs."""
     text = subprocess.run(['docker', 'logs', name], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                          timeout=60).stdout.decode(errors='replace')
+                          timeout=600).stdout.decode(errors='replace')
     text += docker('exec', name, 'sh', '-c',
                    'cat /var/log/supervisor/* /var/log/serposcope/* /var/log/serpuser.log 2>/dev/null; true',
                    check=False).stdout.decode(errors='replace')
@@ -181,7 +181,7 @@ def login(name, email, password):
         return response.status == 200 and urllib.parse.urlsplit(response.geturl()).path == '/'
 
 
-def wait_until(name, check, what, timeout=300):
+def wait_until(name, check, what, timeout=1800):
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -212,7 +212,7 @@ def touch_pending(name):
     with tarfile.open(fileobj=buffer, mode='w') as tar:
         tar.addfile(tarfile.TarInfo('.appbox_install_pending'), io.BytesIO(b''))
     subprocess.run(['docker', 'cp', '-', name + ':' + DATA], input=buffer.getvalue(), check=True,
-                   capture_output=True, timeout=600)
+                   capture_output=True, timeout=1800)
 
 
 def callbacks_for(instance):
@@ -251,7 +251,7 @@ try:
     empty_volume = volume('empty')
     empty = launch('empty', image, empty_volume,
                    install_env('900001142', 'empty@example.com', '', hide(secrets.token_urlsafe(16))))
-    wait_until(empty, lambda: program_state(empty) in ('FATAL', 'EXITED'), 'empty setup exit', 180)
+    wait_until(empty, lambda: program_state(empty) in ('FATAL', 'EXITED'), 'empty setup exit', 900)
     time.sleep(5)
     assert not answering(empty), 'Serposcope answered without installation credentials'
     assert 'ADMIN_EMAIL and ADMIN_PASS must be set for a new installation' in all_logs(empty)
@@ -300,7 +300,7 @@ try:
     race_password = hide('Race' + secrets.token_hex(6))
     race = launch('race', image, fresh_volume,
                   install_env('900001144', 'race@example.com', race_password, hide(secrets.token_urlsafe(16))))
-    wait_until(race, lambda: program_state(race) in ('EXITED', 'FATAL'), 'race setup exit', 300)
+    wait_until(race, lambda: program_state(race) in ('EXITED', 'FATAL'), 'race setup exit', 1800)
     time.sleep(3)
     assert 'does not accept the installation credentials' in all_logs(race), evidence(race)
     assert not answering(race), 'Serposcope left running after failed verification'

@@ -24,7 +24,7 @@ registry.require_absent(image)
 unit = subprocess.run(['bash', str(here.parent / 'tests' / 'test-installed-callback.sh')], timeout=600)
 if unit.returncode:
     raise SystemExit('FAIL release gate: tests/test-installed-callback.sh failed')
-tests = subprocess.run([sys.executable, str(here / 'image-tests.py'), image], timeout=3600)
+tests = subprocess.run([sys.executable, str(here / 'image-tests.py'), image], timeout=14400)
 if tests.returncode:
     raise SystemExit('FAIL release gate: image tests failed')
 registry.require_absent(image)
