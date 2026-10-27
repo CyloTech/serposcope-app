@@ -1,9 +1,52 @@
 #!/bin/bash
-set -x
+# No `set -x`: a trace would copy ADMIN_PASS and the callback token in
+# INSTANCE_ID into the supervisor logs.
+
+serposcope_url="http://127.0.0.1:${SERPOSCOPE_PORT:-80}"
+data_dir=/var/lib/serposcope
+# Present in the data volume from the first start of a new installation until
+# its administrator account is verified, so a retry is still treated as new.
+install_pending="${data_dir}/.appbox_install_pending"
+
+# Wait up to 10 minutes for Serposcope to answer HTTP requests.
+wait_for_serposcope() {
+    local _
+    for _ in $(seq 1 300); do
+        curl -s -o /dev/null --max-time 5 "${serposcope_url}/" && return 0
+        sleep 2
+    done
+    return 1
+}
+
+# Once an administrator exists, Serposcope redirects /create-admin to /login.
+admin_exists() {
+    local result
+    result=$(curl -s -o /dev/null --max-time 10 -w '%{http_code} %{redirect_url}' "${serposcope_url}/create-admin")
+    [[ "${result}" == 30[0-9]\ */login ]]
+}
+
+# Log in with the installation credentials and check that the dashboard opens.
+admin_login_works() {
+    local jar status
+    jar=$(mktemp) || return 1
+    curl -s -o /dev/null --max-time 10 -c "${jar}" -b "${jar}" \
+        --data-urlencode "email=${ADMIN_EMAIL}" \
+        --data-urlencode "password=${ADMIN_PASS}" \
+        "${serposcope_url}/login"
+    status=$(curl -s -o /dev/null --max-time 10 -b "${jar}" -w '%{http_code}' "${serposcope_url}/")
+    rm -f "${jar}"
+    [[ "${status}" == 200 ]]
+}
+
+# Stop Serposcope, so /create-admin is not left open, and exit without
+# confirming the installation to Appbox.
+fail_install() {
+    echo "Serposcope setup failed: $1. The installation was not confirmed." >&2
+    service serposcope stop
+    exit 1
+}
 
 if [ ! -f /etc/app_configured ]; then
-
-    EMAIL_ENC=`sed "s/@/%40/g" <<<"$ADMIN_EMAIL"`
 
     conf_file="/etc/serposcope.conf"
 
@@ -47,11 +90,39 @@ if [ ! -f /etc/app_configured ]; then
       echo "SERPOSCOPE_PORT is not set, keeping the default value"
     fi
 
-    service serposcope start
+    # A volume without a database is a new installation. It needs the
+    # installation credentials before Serposcope starts and /create-admin
+    # becomes reachable.
+    if ! compgen -G "${data_dir}/db.*" >/dev/null; then
+        if [[ -z "${ADMIN_EMAIL}" || -z "${ADMIN_PASS}" ]]; then
+            echo "Serposcope setup failed: ADMIN_EMAIL and ADMIN_PASS must be set for a new installation." >&2
+            exit 1
+        fi
+        touch "${install_pending}"
+        chown serposcope:staff "${install_pending}"
+    fi
 
-    sleep 5
-    DATA_STR="email=${ADMIN_EMAIL}&email-confirm=${ADMIN_EMAIL}&password=${ADMIN_PASS}&password-confirm=${ADMIN_PASS}"
-    curl -v 'http://127.0.0.1/create-admin' --data ${DATA_STR} --compressed &> /var/log/serpuser.log
+    service serposcope start
+    wait_for_serposcope || fail_install "Serposcope did not start"
+
+    if [[ ! -f "${install_pending}" ]] && admin_exists; then
+        echo "Serposcope already has an administrator account; keeping it."
+    else
+        if [[ -z "${ADMIN_EMAIL}" || -z "${ADMIN_PASS}" ]]; then
+            fail_install "ADMIN_EMAIL and ADMIN_PASS are not set"
+        fi
+        echo "Creating the Serposcope administrator account."
+        curl -s -o /dev/null --max-time 30 \
+            --data-urlencode "email=${ADMIN_EMAIL}" \
+            --data-urlencode "email-confirm=${ADMIN_EMAIL}" \
+            --data-urlencode "password=${ADMIN_PASS}" \
+            --data-urlencode "password-confirm=${ADMIN_PASS}" \
+            "${serposcope_url}/create-admin"
+        admin_exists || fail_install "the administrator account was not created"
+        admin_login_works || fail_install "the administrator account does not accept the installation credentials"
+        rm -f "${install_pending}"
+        echo "Serposcope administrator account created and verified."
+    fi
 
     # Finish App install: mark the installed callback pending (before the
     # configured marker, so a crash in between cannot lose it). It is sent in

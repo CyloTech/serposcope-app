@@ -9,8 +9,8 @@
 #     `tail -F` straight away even when the API rejects the callback, sends a
 #     pending callback once in the background, clears the pending flag, keeps
 #     the token out of its set -x trace, and sends nothing on a plain restart.
-#     usermod, groupmod, chown, `service serposcope start` and the
-#     create-admin request are stubbed out.
+#     usermod, groupmod, chown, `service serposcope`, the wait for
+#     Serposcope and the administrator account requests are stubbed out.
 #
 # Usage: tests/test-installed-callback.sh
 set -u
@@ -206,6 +206,7 @@ entrypoint_case() {
     local started_at app_at entrypoint_pid waited=0
     started_at=$(date +%s)
     env INSTANCE_ID="${token_id}" CALLBACK_TOKEN="${header_token}" \
+        ADMIN_EMAIL=gate@example.com ADMIN_PASS=gate-password \
         APPBOX_CALLBACK_BASE="http://127.0.0.1:${port}" \
         APPBOX_CALLBACK_RETRY_DELAY=1 "$@" \
         "${sandbox}" bash -c "date +%s >'${work}/app_started'; sleep 1" \
@@ -245,20 +246,25 @@ entrypoint_case() {
 }
 
 sandbox_start_script() {
+    mkdir -p "${work}/data"
     sed -e "s|/etc/serposcope.conf|${work}/serposcope.conf|g" \
         -e "s|/etc/app_configured|${work}/app_configured|g" \
         -e "s|/etc/appbox_callback_pending|${work}/callback_pending|g" \
+        -e "s|^data_dir=/var/lib/serposcope$|data_dir=${work}/data|" \
         -e "s|/usr/local/bin/appbox-installed-callback|${helper}|g" \
         -e "s|https://api\.cylo\.[a-z]*|http://127.0.0.1:${port}|g" \
         -e 's/^\( *\)usermod .*/\1true/' \
         -e 's/^\( *\)groupmod .*/\1true/' \
         -e 's/^\( *\)chown .*/\1true/' \
-        -e 's|^\( *\)service serposcope start$|\1true|' \
-        -e 's|^\( *\)sleep 5$|\1true|' \
-        -e "s|^\( *\)curl -v 'http://127.0.0.1/create-admin' .*|\1true|" \
+        -e 's|^\( *\)service serposcope st[a-z]*$|\1true|' \
+        -e 's|^\(wait_for_serposcope\)() {$|\1() { return 0; }; unused_\1() {|' \
+        -e 's|^\(admin_exists\)() {$|\1() { return 0; }; unused_\1() {|' \
+        -e 's|^\(admin_login_works\)() {$|\1() { return 0; }; unused_\1() {|' \
+        -e 's/^\( *\)curl /\1true /' \
         -e 's|^tail -F /var/log/serposcope/startup.log$|exec "$@"|' \
         "${repo_root}/docker-entrypoint.sh" >"$1"
-    if grep -qE 'usermod|groupmod|chown|service serposcope|create-admin|/var/log' "$1"; then
+    # Every command that would touch the system or Serposcope must be stubbed.
+    if grep -vE '^ *#' "$1" | grep -qE '^ *(usermod|groupmod|chown|service|curl) |/var/log'; then
         echo "unsandboxed command left in the entrypoint" >"$1"
     fi
 }
