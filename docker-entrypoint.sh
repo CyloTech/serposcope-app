@@ -131,6 +131,7 @@ if [ ! -f /etc/app_configured ]; then
     touch /etc/app_configured
 
 else
+    echo "Serposcope is already set up."
     service serposcope start
 fi
 

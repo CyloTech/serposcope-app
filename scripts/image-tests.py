@@ -33,6 +33,7 @@ import sys
 import tarfile
 import threading
 import time
+import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -287,7 +288,11 @@ try:
     docker('restart', '--time', '20', fresh)
     wait_until(fresh, lambda: answering(fresh), 'restart')
     time.sleep(15)
-    assert all_logs(fresh).count('Creating the Serposcope administrator account.') == 1
+    # supervisord deletes its AUTO child logs when it starts, so these are
+    # the restart's logs only.
+    logs = all_logs(fresh)
+    assert 'Serposcope is already set up.' in logs, evidence(fresh)
+    assert 'Creating the Serposcope administrator account.' not in logs
     assert len(callbacks_for('900001143')) == 1, 'restart sent another callback'
     assert login(fresh, fresh_email, fresh_password)
     check_runtime(fresh)
@@ -333,7 +338,9 @@ try:
           flush=True)
     print('PASS image tests', flush=True)
 except Exception as error:
-    print('FAIL image tests: ' + type(error).__name__ + ': ' + redact(str(error)), flush=True)
+    where = traceback.extract_tb(error.__traceback__)[-1]
+    print('FAIL image tests (line ' + str(where.lineno) + ': ' + redact(where.line or '') + '): '
+          + type(error).__name__ + ': ' + redact(str(error)), flush=True)
     raise SystemExit(1)
 finally:
     for name in reversed(containers):
