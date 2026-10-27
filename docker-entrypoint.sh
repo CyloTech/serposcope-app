@@ -50,11 +50,14 @@ if [ ! -f /etc/app_configured ]; then
     service serposcope start
 
     sleep 5
-    DATA_STR="email=${EMAIL_ENC}&email-confirm=${EMAIL_ENC}&password=${ADMIN_PASS}&password-confirm=${ADMIN_PASS}"
+    DATA_STR="email=${ADMIN_EMAIL}&email-confirm=${ADMIN_EMAIL}&password=${ADMIN_PASS}&password-confirm=${ADMIN_PASS}"
     curl -v 'http://127.0.0.1/create-admin' --data ${DATA_STR} --compressed &> /var/log/serpuser.log
 
     # Finish App install.
-    curl -i -H "Accept: application/json" -H "Content-Type:application/json" -X POST "https://api.cylo.io/v1/apps/installed/$INSTANCE_ID"
+    until [[ $(curl -i -H "Accept: application/json" -H "Content-Type:application/json" -X POST "https://api.cylo.io/v1/apps/installed/${INSTANCE_ID}" | grep '200') ]]
+        do
+        sleep 5
+    done
     touch /etc/app_configured
 
 else

@@ -1,4 +1,4 @@
-JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+JAVA_HOME=/usr/local/openjdk-8
 
 LOGDIR=/var/log/serposcope
 DATADIR=/var/lib/serposcope

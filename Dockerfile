@@ -1,6 +1,6 @@
-FROM java:8-jre
+FROM openjdk:8-jre-slim
 
-ENV SERPOSCOPE_VERSION=2.10.0
+ENV SERPOSCOPE_VERSION=2.13.0
 ENV SERPOSCOPE_PORT=80
 ENV ADMIN_EMAIL=test@test.com
 ENV ADMIN_PASS=test123
@@ -9,6 +9,9 @@ ENV ADMIN_PASS=test123
 RUN apt-get update && apt-get install -my \
     supervisor \
     net-tools \
+    libcap2-bin \
+    wget \
+    curl \
     \
     && rm /etc/timezone \
     && echo "Europe/London" > /etc/timezone \
@@ -19,7 +22,7 @@ RUN apt-get update && apt-get install -my \
 	&& apt-get clean \
 	&& rm -rf /var/lib/apt/lists/*
 
-RUN setcap cap_net_bind_service=+ep /usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java
+RUN setcap cap_net_bind_service=+ep /usr/local/openjdk-8/bin/java
 
 RUN wget https://serposcope.serphacker.com/download/${SERPOSCOPE_VERSION}/serposcope_${SERPOSCOPE_VERSION}_all.deb -O /tmp/serposcope.deb \
     && dpkg --force-confold -i /tmp/serposcope.deb \
@@ -34,6 +37,16 @@ RUN chmod 755 /docker-entrypoint.sh
 
 VOLUME /var/lib/serposcope/
 
+RUN groupmod -g 9999 nogroup && \
+    usermod -g 9999 nobody && \
+    usermod -u 9999 nobody && \
+    usermod -g 9999 sync && \
+    usermod -g 9999 _apt
+
 EXPOSE 80
+
+# Clean up APT when done.
+RUN apt autoremove -y
+RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 ENTRYPOINT ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
